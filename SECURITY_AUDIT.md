@@ -192,16 +192,16 @@ if (target.native().compare(0, base.native().size(), base.native()) != 0) {
 * **Note:** 1 MB cap bounds allocation while staying well above typical (<100KB) metadata sizes.  
 * **Remediation Snippet:**  
 ```cpp
-constexpr size_t maxModJsonBytes = 1 * 1024 * 1024; // 1 MB limit (typical metadata <100KB)
-if (modJsonData.size() > maxModJsonBytes) {
+constexpr size_t MAX_MOD_JSON_SIZE_BYTES = 1 * 1024 * 1024; // 1 MB limit (typical metadata <100KB)
+if (modJsonData.size() > MAX_MOD_JSON_SIZE_BYTES) {
     return Impl::createInvalidMetadata(
         path,
-        fmt::format("mod.json exceeds size limit ({} bytes, max {} bytes)", modJsonData.size(), maxModJsonBytes),
+        fmt::format("mod.json exceeds size limit ({} bytes, max {} bytes)", modJsonData.size(), MAX_MOD_JSON_SIZE_BYTES),
         guessedID
     );
 }
 matjson::ParseOptions opts;
-opts.max_depth = 256; // prevents excessive nesting; far above expected shallow mod.json structures
+opts.max_depth = 256; // prevents excessive nesting; 256 gives ample headroom while mitigating stack exhaustion.
 auto modJsonRes = matjson::parse(modJsonData, opts); // continue existing error handling
 ```  
 
