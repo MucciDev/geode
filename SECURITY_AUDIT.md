@@ -7,7 +7,7 @@
   - `readMemory` dereferences `address + i` for `amount` bytes without validating page readability.  
   - If the region crosses an unmapped/guard page, the process faults during patch creation, crashing before any guard rails execute.  
 * **Impact:** A malicious or buggy mod can crash the host by requesting a patch over invalid memory, aborting initialization and risking partial state writes.  
-* **Note:** If `tulip::hook::isReadable` is not available, a platform helper must be added (e.g., `VirtualQuery` on Windows, `mprotect`/`/proc/self/maps` on Linux/macOS).  
+* **Note:** If `tulip::hook::isReadable` is not available, a platform helper must be added (e.g., `VirtualQuery` on Windows, `mprotect`/`/proc/self/maps` on Linux/macOS). Validate per page to avoid excessive syscalls.  
 * **Remediation Snippet:**  
 ```cpp
 // Helper must validate OS page protections (e.g., via VirtualQuery/ mprotect checks).
@@ -18,12 +18,18 @@ static Result<ByteVector> safeReadMemory(void* address, size_t amount) {
     std::byte const* ptr = static_cast<std::byte const*>(address);
     ByteVector ret;
     ret.reserve(amount);
-    for (size_t i = 0; i < amount; i++) {
+    constexpr size_t kPageSize = 4096;
+    size_t i = 0;
+    while (i < amount) {
         auto current = ptr + i;
-        if (!tulip::hook::isReadable(current, 1)) {
+        auto window = std::min(kPageSize - (reinterpret_cast<uintptr_t>(current) % kPageSize), amount - i);
+        if (!tulip::hook::isReadable(current, window)) {
             return Err("Patch source crosses unreadable memory");
         }
-        ret.push_back(std::to_integer<uint8_t>(*current));
+        for (size_t j = 0; j < window; ++j) {
+            ret.push_back(std::to_integer<uint8_t>(current[j]));
+        }
+        i += window;
     }
     return Ok(std::move(ret));
 }
@@ -162,8 +168,10 @@ for (auto it = m_dependants.begin(); it != m_dependants.end();) {
 * **Remediation Snippet:**  
 ```cpp
 auto target = std::filesystem::weakly_canonical(dir / filePath, ec);
+if (ec) return Err(fmt::format("Unable to canonicalize target: {}", ec.message()));
 auto base   = std::filesystem::weakly_canonical(dir, ec);
-if (ec || target.native().compare(0, base.native().size(), base.native()) != 0) {
+if (ec) return Err(fmt::format("Unable to canonicalize base: {}", ec.message()));
+if (target.native().compare(0, base.native().size(), base.native()) != 0) {
     return Err("Zip entry escapes extraction root");
 }
 ```  
@@ -177,9 +185,10 @@ if (ec || target.native().compare(0, base.native().size(), base.native()) != 0) 
   - A crafted `.geode` can ship a multi-gigabyte JSON that is fully loaded into memory.  
   - Parsing exhausts memory before validation, crashing or stalling the loader.  
 * **Impact:** Loader crashes during package parsing, preventing the game from launching.  
+* **Note:** 1 MB cap bounds allocation while staying well above typical (<100KB) metadata sizes.  
 * **Remediation Snippet:**  
 ```cpp
-constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // 1 MB limit to allow rare edge cases (typical metadata <100KB); adjust upward only if legitimate mods exceed this.
+constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // 1 MB limit (typical metadata <100KB)
 if (modJsonData.size() > kMaxModJsonBytes) {
     return Impl::createInvalidMetadata(path, "mod.json too large", guessedID);
 }
