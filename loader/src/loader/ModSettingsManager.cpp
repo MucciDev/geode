@@ -3,6 +3,7 @@
 #include <Geode/utils/JsonValidation.hpp>
 #include <Geode/utils/StringMap.hpp>
 #include "ModImpl.hpp"
+#include <algorithm>
 
 using namespace geode::prelude;
 
@@ -329,4 +330,15 @@ bool ModSettingsManager::restartRequired() const {
 
 void ModSettingsManager::addDependant(Mod* mod) {
     m_impl->dependants.push_back(mod);
+}
+
+void ModSettingsManager::removeDependant(Mod* mod) {
+    m_impl->dependants.erase(
+        std::remove(m_impl->dependants.begin(), m_impl->dependants.end(), mod),
+        m_impl->dependants.end()
+    );
+}
+
+void ModSettingsManager::clearDependants() {
+    m_impl->dependants.clear();
 }

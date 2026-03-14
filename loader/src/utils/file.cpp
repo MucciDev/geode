@@ -493,6 +493,16 @@ public:
     Result<> extractAllTo(Path const& dir) {
         GEODE_UNWRAP(file::createDirectoryAll(dir));
 
+        std::error_code canonicalErr;
+        auto const baseDir = std::filesystem::weakly_canonical(dir, canonicalErr);
+        if (canonicalErr) {
+            return Err(
+                "Unable to canonicalize extraction directory {}: {}",
+                dir,
+                canonicalErr.message()
+            );
+        }
+
         GEODE_UNWRAP(
             mzTry(mz_zip_goto_first_entry(m_handle))
             .mapErr([&](auto error) {
@@ -521,29 +531,42 @@ public:
             Path filePath;
             filePath.assign(info->filename, info->filename + info->filename_size);
 
-            // make sure zip files like root/../../file.txt don't get extracted to
-            // avoid zip attacks
-            std::error_code ec;
-            if (!std::filesystem::relative(dir / filePath, dir, ec).empty()) {
-                if (m_entries.at(filePath).isDirectory) {
-                    GEODE_UNWRAP(file::createDirectoryAll(dir / filePath));
-                }
-                else {
-                    GEODE_UNWRAP(this->extractAt(dir, filePath));
-                }
-                if (m_progressCallback) {
-                    m_progressCallback(currentEntry, numEntries);
+            std::error_code entryEc;
+            auto const targetPath = std::filesystem::weakly_canonical(baseDir / filePath, entryEc);
+            if (entryEc) {
+                return Err(
+                    "Unable to canonicalize zip target {}: {}",
+                    baseDir / filePath,
+                    entryEc.message()
+                );
+            }
+
+            auto baseIter = baseDir.begin();
+            auto targetIter = targetPath.begin();
+            bool isWithinBase = true;
+            for (; baseIter != baseDir.end(); ++baseIter, ++targetIter) {
+                if (targetIter == targetPath.end() || *baseIter != *targetIter) {
+                    isWithinBase = false;
+                    break;
                 }
             }
-            else {
+
+            if (!isWithinBase) {
                 log::error(
                     "Zip entry '{}' is not contained within zip bounds",
-                    dir / filePath
+                    targetPath
                 );
+                return Err("Zip entry escapes extraction directory: {}", filePath);
+            }
 
-                if (ec) {
-                    return Err(fmt::format("Unable to check relative: {}", ec.message()));
-                }
+            if (m_entries.at(filePath).isDirectory) {
+                GEODE_UNWRAP(file::createDirectoryAll(baseDir / filePath));
+            }
+            else {
+                GEODE_UNWRAP(this->extractAt(baseDir, filePath));
+            }
+            if (m_progressCallback) {
+                m_progressCallback(currentEntry, numEntries);
             }
         } while (mz_zip_goto_next_entry(m_handle) == MZ_OK);
 

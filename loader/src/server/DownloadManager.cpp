@@ -5,6 +5,7 @@
 #include <Geode/utils/StringMap.hpp>
 #include <fmt/format.h>
 #include <optional>
+#include <chrono>
 #include <hash/hash.hpp>
 #include <loader/LoaderImpl.hpp>
 #include <loader/ModImpl.hpp>
@@ -165,7 +166,9 @@ public:
             .percentage = 0,
         };
 
-        auto req = web::WebRequest().userAgent(getServerUserAgent());
+        auto req = web::WebRequest()
+            .userAgent(getServerUserAgent())
+            .timeout(std::chrono::seconds(15));
         req.onProgress([this, id = std::string(m_id)](const auto& progress) {
             m_status = DownloadStatusDownloading {
                 .percentage = static_cast<uint8_t>(progress.downloadProgress().value_or(0)),

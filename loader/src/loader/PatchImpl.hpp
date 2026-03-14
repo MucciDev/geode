@@ -5,6 +5,8 @@
 #include <Geode/loader/Mod.hpp>
 #include "ModImpl.hpp"
 #include "ModPatch.hpp"
+#include <mutex>
+#include <optional>
 
 using namespace geode::prelude;
 
@@ -15,11 +17,13 @@ public:
 
     static std::shared_ptr<Patch> create(void* address, ByteSpan patch);
     static std::vector<Patch::Impl*>& allEnabled();
+    static std::mutex& allEnabledMutex();
 
     Patch* m_self = nullptr;
     void* m_address;
     ByteVector m_original;
     ByteVector m_patch;
+    std::optional<std::string> m_creationError;
 
     Result<> enable();
     Result<> disable();
