@@ -47,7 +47,6 @@ namespace geode {
         bool m_readyToHook = false;
 
         std::mutex m_nextModMutex;
-        std::unique_lock<std::mutex> m_nextModLock = std::unique_lock<std::mutex>(m_nextModMutex, std::defer_lock);
         std::condition_variable m_nextModCV;
         std::mutex m_nextModAccessMutex;
         Mod* m_nextMod = nullptr;
@@ -70,6 +69,7 @@ namespace geode {
         void releaseNextMod();
 
         std::unordered_map<void*, std::pair<tulip::hook::HandlerHandle, size_t>> m_handlerHandles;
+        mutable std::mutex m_handlerMutex;
 
         bool m_isPatchless = false;
         std::optional<std::string> m_binaryPath;

@@ -67,5 +67,7 @@ namespace geode {
          * for this mod, they are also reloaded for the dependant mods
          */
         void addDependant(Mod* mod);
+        void removeDependant(Mod* mod);
+        void clearDependants();
     };
 }

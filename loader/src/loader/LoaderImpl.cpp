@@ -22,6 +22,7 @@
 #include <crashlog.hpp>
 #include <fmt/format.h>
 #include <hash.hpp>
+#include <algorithm>
 #include <iostream>
 #include <iterator>
 #include <optional>
@@ -176,6 +177,7 @@ void Loader::Impl::updateResources(bool forceReload) {
 }
 
 std::vector<Mod*> Loader::Impl::getAllMods() {
+    std::scoped_lock lock(m_mutex);
     return map::values(m_mods);
 }
 
@@ -232,6 +234,7 @@ bool Loader::Impl::isModInstalled(std::string_view id) const {
 }
 
 Mod* Loader::Impl::getInstalledMod(std::string_view id) const {
+    std::scoped_lock lock(m_mutex);
     auto it = m_mods.find(id);
     if (it != m_mods.end() && !it->second->isUninstalled()) {
         return it->second;
@@ -244,6 +247,7 @@ bool Loader::Impl::isModLoaded(std::string_view id) const {
 }
 
 Mod* Loader::Impl::getLoadedMod(std::string_view id) const {
+    std::scoped_lock lock(m_mutex);
     auto it = m_mods.find(id);
     if (it != m_mods.end() && it->second->isLoaded()) {
         return it->second;
@@ -354,10 +358,22 @@ void Loader::Impl::queueMods(std::vector<ModMetadata>& modQueue) {
 }
 
 void Loader::Impl::populateModList(std::vector<ModMetadata>& modQueue) {
+    std::scoped_lock lock(m_mutex);
+
     std::vector<std::string> toRemove;
     for (auto& [id, mod] : m_mods) {
         if (mod->isInternal())
             continue;
+
+        for (auto& [_, other] : m_mods) {
+            auto& otherDependants = other->m_impl->m_dependants;
+            otherDependants.erase(
+                std::remove(otherDependants.begin(), otherDependants.end(), mod),
+                otherDependants.end()
+            );
+            other->m_impl->m_settings->removeDependant(mod);
+        }
+
         delete mod;
         toRemove.push_back(id);
     }
@@ -433,6 +449,13 @@ void Loader::Impl::populateModList(std::vector<ModMetadata>& modQueue) {
 }
 
 void Loader::Impl::buildModGraph() {
+    std::scoped_lock lock(m_mutex);
+
+    for (auto const& [_, mod] : m_mods) {
+        mod->m_impl->m_dependants.clear();
+        mod->m_impl->m_settings->clearDependants();
+    }
+
     for (auto const& [id, mod] : m_mods) {
         log::debug("{}", mod->getID());
         log::NestScope nest;
@@ -1104,21 +1127,26 @@ void Loader::Impl::executeMainThreadQueue() {
 }
 
 void Loader::Impl::provideNextMod(Mod* mod) {
-    m_nextModLock.lock();
-    if (mod) {
+    {
+        std::scoped_lock lock(m_nextModMutex);
         m_nextMod = mod;
     }
+    m_nextModCV.notify_all();
 }
 
 Mod* Loader::Impl::takeNextMod() {
+    std::scoped_lock lock(m_nextModMutex);
     if (!m_nextMod)
         m_nextMod = this->getInternalMod();
     return m_nextMod;
 }
 
 void Loader::Impl::releaseNextMod() {
-    m_nextMod = nullptr;
-    m_nextModLock.unlock();
+    {
+        std::scoped_lock lock(m_nextModMutex);
+        m_nextMod = nullptr;
+    }
+    m_nextModCV.notify_all();
 }
 
 // TODO: Support for quoted launch args w/ spaces (this will be backwards compatible)
@@ -1187,41 +1215,52 @@ bool Loader::Impl::getLaunchFlag(std::string_view name) const {
 }
 
 Result<tulip::hook::HandlerHandle> Loader::Impl::getHandler(void* address) {
-    if (!m_handlerHandles.count(address)) {
+    std::scoped_lock lock(m_handlerMutex);
+    auto it = m_handlerHandles.find(address);
+    if (it == m_handlerHandles.end()) {
         return Err("Handler does not exist at address");
     }
-    return Ok(m_handlerHandles[address].first);
+    return Ok(it->second.first);
 }
 
 Result<tulip::hook::HandlerHandle> Loader::Impl::getOrCreateHandler(void* address, tulip::hook::HandlerMetadata const& metadata) {
-    if (m_handlerHandles.count(address) && m_handlerHandles[address].second > 0) {
-        m_handlerHandles[address].second++;
-        return Ok(m_handlerHandles[address].first);
+    std::scoped_lock lock(m_handlerMutex);
+    auto it = m_handlerHandles.find(address);
+    if (it != m_handlerHandles.end() && it->second.second > 0) {
+        it->second.second++;
+        return Ok(it->second.first);
     }
+
     tulip::hook::HandlerHandle handle;
     GEODE_UNWRAP_INTO(handle, tulip::hook::createHandler(address, metadata));
-
-    m_handlerHandles[address].first = handle;
-    m_handlerHandles[address].second = 1;
+    m_handlerHandles[address] = { handle, 1 };
     return Ok(handle);
 }
 
 Result<tulip::hook::HandlerHandle> Loader::Impl::getAndDecreaseHandler(void* address) {
-    if (!m_handlerHandles.count(address)) {
+    std::scoped_lock lock(m_handlerMutex);
+    auto it = m_handlerHandles.find(address);
+    if (it == m_handlerHandles.end()) {
         return Err("Handler does not exist at address");
     }
-    auto handle = m_handlerHandles[address].first;
-    m_handlerHandles[address].second--;
+    if (it->second.second == 0) {
+        return Err("Handler refcount is already zero at address");
+    }
+    auto handle = it->second.first;
+    it->second.second--;
     return Ok(handle);
 }
 
 Result<> Loader::Impl::removeHandlerIfNeeded(void* address) {
-    if (!m_handlerHandles.count(address)) {
+    std::scoped_lock lock(m_handlerMutex);
+    auto it = m_handlerHandles.find(address);
+    if (it == m_handlerHandles.end()) {
         return Err("Handler does not exist at address");
     }
-    auto handle = m_handlerHandles[address].first;
-    if (m_handlerHandles[address].second == 0) {
+    auto handle = it->second.first;
+    if (it->second.second == 0) {
         GEODE_UNWRAP(tulip::hook::removeHandler(handle));
+        m_handlerHandles.erase(it);
     }
     return Ok();
 }

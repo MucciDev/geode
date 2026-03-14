@@ -15,6 +15,52 @@
 
 using namespace geode::prelude;
 
+namespace {
+    constexpr size_t MAX_MOD_JSON_SIZE_BYTES = 1024 * 1024;
+    constexpr size_t MAX_MOD_JSON_DEPTH = 256;
+
+    Result<> validateJsonDepth(std::string_view json, size_t maxDepth) {
+        size_t currentDepth = 0;
+        bool inString = false;
+        bool escaped = false;
+
+        for (auto const ch : json) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = inString;
+                continue;
+            }
+            if (ch == '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) {
+                continue;
+            }
+            if (ch == '{' || ch == '[') {
+                currentDepth++;
+                if (currentDepth > maxDepth) {
+                    return Err("mod.json exceeds max nesting depth ({})", maxDepth);
+                }
+            }
+            else if (ch == '}' || ch == ']') {
+                if (currentDepth == 0) {
+                    return Err("mod.json has invalid nesting");
+                }
+                currentDepth--;
+            }
+        }
+
+        if (currentDepth != 0 || inString) {
+            return Err("mod.json has invalid nesting");
+        }
+        return Ok();
+    }
+}
+
 std::optional<std::string> ModMetadataLinks::getHomepageURL() const {
     return m_impl->m_homepage;
 }
@@ -833,8 +879,26 @@ ModMetadata ModMetadata::createFromGeodeFile(std::filesystem::path const& path) 
     }
     auto&& modJsonData = std::move(modJsonDataRes.unwrap());
 
+    if (modJsonData.size() > MAX_MOD_JSON_SIZE_BYTES) {
+        return Impl::createInvalidMetadata(
+            path,
+            fmt::format(
+                "mod.json exceeds size limit ({} bytes, max {} bytes)",
+                modJsonData.size(),
+                MAX_MOD_JSON_SIZE_BYTES
+            ),
+            guessedID
+        );
+    }
+
+    std::string modJsonText(modJsonData.begin(), modJsonData.end());
+    auto jsonDepthRes = validateJsonDepth(modJsonText, MAX_MOD_JSON_DEPTH);
+    if (!jsonDepthRes) {
+        return Impl::createInvalidMetadata(path, jsonDepthRes.unwrapErr(), guessedID);
+    }
+
     // Parse the JSON
-    auto modJsonRes = matjson::parse(std::string(modJsonData.begin(), modJsonData.end()))
+    auto modJsonRes = matjson::parse(modJsonText)
         .mapErr([](auto const& err) {
             return fmt::format("Unable to parse mod.json: {}", err);
         });
