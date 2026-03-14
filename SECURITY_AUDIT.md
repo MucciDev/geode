@@ -1,5 +1,5 @@
 ## [HIGH][VULN-001] PATCH_UNBOUNDED_READ  
-* **CWE Category:** CWE-119: Improper Restriction of Operations within the Bounds of a Memory Buffer  
+* **CWE Category:** CWE-125: Out-of-bounds Read  
 * **Vulnerability/Crash Type:** Out-of-bounds read / segmentation fault  
 * **Specific File & Line:** `loader/src/loader/PatchImpl.cpp`:26-32  
 * **The Chain of Failure:**  
@@ -131,6 +131,7 @@ void Loader::Impl::populateModList(...) {
 * **Impact:** Previously installed patches are clobbered, leading to unpredictable execution or crashes when the code path runs.  
 * **Remediation Snippet:**  
 ```cpp
+// intervals intersect unless one ends before the other starts
 bool intersects = !(thisMax < otherMin || thisMin > otherMax);
 if (intersects) {
     return Err(fmt::format("Failed to enable patch: overlaps patch at {}", otherMin));
@@ -191,16 +192,16 @@ if (target.native().compare(0, base.native().size(), base.native()) != 0) {
 * **Note:** 1 MB cap bounds allocation while staying well above typical (<100KB) metadata sizes.  
 * **Remediation Snippet:**  
 ```cpp
-constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // 1 MB limit (typical metadata <100KB)
-if (modJsonData.size() > kMaxModJsonBytes) {
+constexpr size_t maxModJsonBytes = 1 * 1024 * 1024; // 1 MB limit (typical metadata <100KB)
+if (modJsonData.size() > maxModJsonBytes) {
     return Impl::createInvalidMetadata(
         path,
-        fmt::format("mod.json exceeds size limit ({} bytes, max {} bytes)", modJsonData.size(), kMaxModJsonBytes),
+        fmt::format("mod.json exceeds size limit ({} bytes, max {} bytes)", modJsonData.size(), maxModJsonBytes),
         guessedID
     );
 }
 matjson::ParseOptions opts;
-opts.max_depth = 256;
+opts.max_depth = 256; // prevents excessive nesting; far above expected shallow mod.json structures
 auto modJsonRes = matjson::parse(modJsonData, opts); // continue existing error handling
 ```  
 
