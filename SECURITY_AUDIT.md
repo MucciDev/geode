@@ -1,3 +1,20 @@
+## Verification Summary (2026-03-14)
+
+All findings in this document were re-verified against the current code on branch `copilot/verify-findings`.
+
+| Finding | Verification |
+| --- | --- |
+| VULN-001 | ✅ Valid |
+| VULN-002 | ✅ Valid |
+| VULN-003 | ✅ Valid |
+| VULN-004 | ✅ Valid |
+| VULN-005 | ✅ Valid |
+| VULN-006 | ✅ Valid |
+| VULN-007 | ✅ Valid |
+| VULN-008 | ✅ Valid |
+| VULN-009 | ✅ Valid |
+| VULN-010 | ✅ Valid |
+
 ## [HIGH][VULN-001] PATCH_UNBOUNDED_READ  
 * **CWE Category:** CWE-125: Out-of-bounds Read  
 * **Vulnerability/Crash Type:** Out-of-bounds read / segmentation fault  
