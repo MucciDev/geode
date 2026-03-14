@@ -179,7 +179,7 @@ if (ec || target.native().compare(0, base.native().size(), base.native()) != 0) 
 * **Impact:** Loader crashes during package parsing, preventing the game from launching.  
 * **Remediation Snippet:**  
 ```cpp
-constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // 1 MB limit (sized above typical <100KB metadata; adjust if larger metadata is expected).
+constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // 1 MB limit. Sized above typical <100KB metadata; adjust if larger metadata is expected.
 if (modJsonData.size() > kMaxModJsonBytes) {
     return Impl::createInvalidMetadata(path, "mod.json too large", guessedID);
 }
