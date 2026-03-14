@@ -1127,8 +1127,10 @@ void Loader::Impl::executeMainThreadQueue() {
 }
 
 void Loader::Impl::provideNextMod(Mod* mod) {
-    std::scoped_lock lock(m_nextModMutex);
-    m_nextMod = mod;
+    {
+        std::scoped_lock lock(m_nextModMutex);
+        m_nextMod = mod;
+    }
     m_nextModCV.notify_all();
 }
 
@@ -1140,8 +1142,10 @@ Mod* Loader::Impl::takeNextMod() {
 }
 
 void Loader::Impl::releaseNextMod() {
-    std::scoped_lock lock(m_nextModMutex);
-    m_nextMod = nullptr;
+    {
+        std::scoped_lock lock(m_nextModMutex);
+        m_nextMod = nullptr;
+    }
     m_nextModCV.notify_all();
 }
 
@@ -1240,7 +1244,7 @@ Result<tulip::hook::HandlerHandle> Loader::Impl::getAndDecreaseHandler(void* add
         return Err("Handler does not exist at address");
     }
     if (it->second.second == 0) {
-        return Err("Handler refcount underflow at address");
+        return Err("Handler refcount is already zero at address");
     }
     auto handle = it->second.first;
     it->second.second--;
