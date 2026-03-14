@@ -185,7 +185,7 @@ if (target.native().compare(0, base.native().size(), base.native()) != 0) {
 * **Vulnerability/Crash Type:** OOM / denial of service  
 * **Specific File & Line:** `loader/src/loader/ModMetadataImpl.cpp`:837-844  
 * **The Chain of Failure:**  
-  - `matjson::parse` consumes the entire `mod.json` entry with no size or depth guard.  
+  - `matjson::parse` consumes the entire `mod.json` entry with no size or depth guard in the current implementation.  
   - A crafted `.geode` can ship a multi-gigabyte JSON that is fully loaded into memory.  
   - Parsing exhausts memory before validation, crashing or stalling the loader.  
 * **Impact:** Loader crashes during package parsing, preventing the game from launching.  
@@ -201,7 +201,7 @@ if (modJsonData.size() > MAX_MOD_JSON_SIZE_BYTES) {
     );
 }
 matjson::ParseOptions opts;
-opts.max_depth = 256; // parser depth cap to prevent stack exhaustion; matjson reports parse error if exceeded; observed mod.json depth <10 so 256 is generous.
+opts.max_depth = 256; // caps object/array nesting; matjson returns a parse error if exceeded, not truncated; observed mod.json depth <10 so 256 is generous.
 auto modJsonRes = matjson::parse(modJsonData, opts); // continue existing error handling
 ```  
 
