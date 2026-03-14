@@ -7,6 +7,7 @@
   - `readMemory` dereferences `address + i` for `amount` bytes without validating page readability.  
   - If the region crosses an unmapped/guard page, the process faults during patch creation, crashing before any guard rails execute.  
 * **Impact:** A malicious or buggy mod can crash the host by requesting a patch over invalid memory, aborting initialization and risking partial state writes.  
+* **Note:** If `tulip::hook::isReadable` is not available, a platform helper must be added (e.g., `VirtualQuery` on Windows, `mprotect`/`/proc/self/maps` on Linux/macOS).  
 * **Remediation Snippet:**  
 ```cpp
 // Helper must validate OS page protections (e.g., via VirtualQuery/ mprotect checks).
@@ -19,7 +20,7 @@ static Result<ByteVector> safeReadMemory(void* address, size_t amount) {
     ret.reserve(amount);
     for (size_t i = 0; i < amount; i++) {
         auto current = ptr + i;
-        if (!tulip::hook::isReadable(current, 1)) { // add platform helper (VirtualQuery/mprotect) if API not present
+        if (!tulip::hook::isReadable(current, 1)) {
             return Err("Patch source crosses unreadable memory");
         }
         ret.push_back(std::to_integer<uint8_t>(*current));
@@ -178,7 +179,7 @@ if (ec || target.native().compare(0, base.native().size(), base.native()) != 0) 
 * **Impact:** Loader crashes during package parsing, preventing the game from launching.  
 * **Remediation Snippet:**  
 ```cpp
-constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // Sized above typical <100KB metadata; adjust this constant if larger metadata is expected.
+constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // 1 MB limit (sized above typical <100KB metadata; adjust if larger metadata is expected).
 if (modJsonData.size() > kMaxModJsonBytes) {
     return Impl::createInvalidMetadata(path, "mod.json too large", guessedID);
 }
