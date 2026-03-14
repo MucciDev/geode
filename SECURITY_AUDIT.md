@@ -18,13 +18,16 @@ static Result<ByteVector> safeReadMemory(void* address, size_t amount) {
     std::byte const* ptr = static_cast<std::byte const*>(address);
     ByteVector ret;
     ret.reserve(amount);
-    constexpr size_t kPageSize = 4096;
+    const size_t pageSize = tulip::hook::pageSize(); // query platform page size
     size_t i = 0;
     while (i < amount) {
         auto current = ptr + i;
-        auto window = std::min(kPageSize - (reinterpret_cast<uintptr_t>(current) % kPageSize), amount - i);
+        auto window = std::min(pageSize - (reinterpret_cast<uintptr_t>(current) % pageSize), amount - i);
         if (!tulip::hook::isReadable(current, window)) {
-            return Err("Patch source crosses unreadable memory");
+            return Err(fmt::format(
+                "Patch source crosses unreadable memory at address 0x{:x}",
+                reinterpret_cast<uintptr_t>(current)
+            ));
         }
         for (size_t j = 0; j < window; ++j) {
             ret.push_back(std::to_integer<uint8_t>(current[j]));
@@ -168,9 +171,9 @@ for (auto it = m_dependants.begin(); it != m_dependants.end();) {
 * **Remediation Snippet:**  
 ```cpp
 auto target = std::filesystem::weakly_canonical(dir / filePath, ec);
-if (ec) return Err(fmt::format("Unable to canonicalize target: {}", ec.message()));
+if (ec) return Err(fmt::format("Unable to canonicalize target path {}: {}", dir / filePath, ec.message()));
 auto base   = std::filesystem::weakly_canonical(dir, ec);
-if (ec) return Err(fmt::format("Unable to canonicalize base: {}", ec.message()));
+if (ec) return Err(fmt::format("Unable to canonicalize base directory {}: {}", dir, ec.message()));
 if (target.native().compare(0, base.native().size(), base.native()) != 0) {
     return Err("Zip entry escapes extraction root");
 }
@@ -190,7 +193,11 @@ if (target.native().compare(0, base.native().size(), base.native()) != 0) {
 ```cpp
 constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // 1 MB limit (typical metadata <100KB)
 if (modJsonData.size() > kMaxModJsonBytes) {
-    return Impl::createInvalidMetadata(path, "mod.json too large", guessedID);
+    return Impl::createInvalidMetadata(
+        path,
+        fmt::format("mod.json exceeds size limit ({} bytes, max {} bytes)", modJsonData.size(), kMaxModJsonBytes),
+        guessedID
+    );
 }
 matjson::ParseOptions opts;
 opts.max_depth = 256;
