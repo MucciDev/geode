@@ -19,7 +19,7 @@ static Result<ByteVector> safeReadMemory(void* address, size_t amount) {
     ret.reserve(amount);
     for (size_t i = 0; i < amount; i++) {
         auto current = ptr + i;
-        if (!tulip::hook::isReadable(current, 1)) { // tulip::hook::isReadable must be added if absent
+        if (!tulip::hook::isReadable(current, 1)) { // add platform helper (VirtualQuery/mprotect) if API not present
             return Err("Patch source crosses unreadable memory");
         }
         ret.push_back(std::to_integer<uint8_t>(*current));
@@ -178,7 +178,7 @@ if (ec || target.native().compare(0, base.native().size(), base.native()) != 0) 
 * **Impact:** Loader crashes during package parsing, preventing the game from launching.  
 * **Remediation Snippet:**  
 ```cpp
-constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // Make configurable; chosen to stay well above typical <100KB metadata.
+constexpr size_t kMaxModJsonBytes = 1 * 1024 * 1024; // Sized above typical <100KB metadata; adjust this constant if larger metadata is expected.
 if (modJsonData.size() > kMaxModJsonBytes) {
     return Impl::createInvalidMetadata(path, "mod.json too large", guessedID);
 }
