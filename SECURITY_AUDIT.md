@@ -133,7 +133,7 @@ void Loader::Impl::populateModList(...) {
 ```cpp
 bool intersects = !(thisMax < otherMin || thisMin > otherMax);
 if (intersects) {
-    return Err("Failed to enable patch: overlaps patch at {}", otherMin);
+    return Err(fmt::format("Failed to enable patch: overlaps patch at {}", otherMin));
 }
 ```  
 
@@ -201,7 +201,7 @@ if (modJsonData.size() > kMaxModJsonBytes) {
 }
 matjson::ParseOptions opts;
 opts.max_depth = 256;
-auto modJsonRes = matjson::parse(modJsonData, opts)...
+auto modJsonRes = matjson::parse(modJsonData, opts); // continue existing error handling
 ```  
 
 ## [MEDIUM][VULN-009] NEXTMOD_LOCK_LEAK  
