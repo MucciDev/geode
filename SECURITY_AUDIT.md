@@ -201,7 +201,7 @@ if (modJsonData.size() > MAX_MOD_JSON_SIZE_BYTES) {
     );
 }
 matjson::ParseOptions opts;
-opts.max_depth = 256; // parser depth cap to prevent stack exhaustion; matjson returns parse error when exceeded; observed mod.json depth <10 so 256 is generous.
+opts.max_depth = 256; // parser depth cap to prevent stack exhaustion; matjson reports parse error if exceeded; observed mod.json depth <10 so 256 is generous.
 auto modJsonRes = matjson::parse(modJsonData, opts); // continue existing error handling
 ```  
 
